@@ -1,8 +1,8 @@
-# MambaSplit API (Spring Boot Skeleton) 🚀
+# MambaSplit API (Spring Boot Skeleton)
 
 Java 21 + Spring Boot + Postgres + Flyway + JWT (access + refresh)
 
-## ⚡ Quick Start (Local)
+## Quick Start (Local)
 1. Start Postgres:
 ```bash
 docker compose up -d
@@ -15,7 +15,7 @@ docker compose up -d
 
 API: `http://localhost:8080`
 
-## 🐘 Postgres Basic Commands
+## Postgres Basic Commands
 Start Postgres container:
 ```bash
 docker compose up -d
@@ -26,6 +26,11 @@ Open `psql` in the running Postgres container:
 docker compose exec db psql -U mambasplit -d mambasplit
 ```
 
+Open `psql` for the test database:
+```bash
+docker compose exec db psql -U mambasplit -d mambasplit_test
+```
+
 Inside `psql`:
 ```sql
 \db
@@ -33,7 +38,12 @@ Inside `psql`:
 \q
 ```
 
-## 🧪 Test Commands
+Create the dedicated test database once:
+```sql
+CREATE DATABASE mambasplit_test;
+```
+
+## Test Commands
 Run unit and integration tests:
 ```bash
 ./mvnw test
@@ -42,22 +52,15 @@ Run unit and integration tests:
 
 `./mvnw verify` runs integration tests like `*IT.java` via Maven Failsafe.
 
-## 🧹 Integration-Test Cleanup
-After ITs complete, Maven runs targeted DB cleanup for test users (`User A` / `User B`).
+Integration tests run with Spring's `test` profile (`src/test/resources/application-test.yml`) and connect to `mambasplit_test` by default.
 
-Keep IT data for manual DB queries:
-```bash
-./mvnw verify -DskipItCleanup=true
-```
-
-## 🪟 Windows (PowerShell)
+## Windows (PowerShell)
 ```powershell
 .\mvnw.cmd spring-boot:run
 .\mvnw.cmd test
 .\mvnw.cmd verify
-.\mvnw.cmd verify -DskipItCleanup=true
 ```
 
-## 💰 Money
+## Money
 All monetary values are stored as integer cents: `amount_cents BIGINT`.
 See `domain/money/Money.java`.
