@@ -28,6 +28,7 @@ public class ExpenseService {
   public UUID createEqualSplitExpense(UUID groupId, UUID payerUserId, String description, long totalAmountCents, List<UUID> participants) {
     if (participants == null || participants.isEmpty()) throw new IllegalArgumentException("Participants required");
     if (totalAmountCents <= 0) throw new IllegalArgumentException("Amount must be > 0");
+    if (new HashSet<>(participants).size() != participants.size()) throw new IllegalArgumentException("Duplicate user in split");
 
     UUID expenseId = UUID.randomUUID();
     expenses.save(new Expense(expenseId, groupId, payerUserId, description, Money.ofCents(totalAmountCents), Instant.now()));

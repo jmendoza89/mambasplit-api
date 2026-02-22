@@ -1,0 +1,10 @@
+app:
+  security:
+    jwt:
+      secret: "dev-secret-change-me-dev-secret-change-me"
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mambasplit
+    username: mambasplit
+    password: mambasplit
