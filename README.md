@@ -29,6 +29,7 @@ docker compose exec db psql -U mambasplit -d mambasplit
 Inside `psql`:
 ```sql
 \db
+\d
 \q
 ```
 
