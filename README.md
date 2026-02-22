@@ -1,4 +1,4 @@
-# MambaSplit API (Spring Boot Skeleton)
+# MambaSplit API
 
 Java 21 + Spring Boot + Postgres + Flyway + JWT (access + refresh)
 
@@ -8,12 +8,38 @@ Java 21 + Spring Boot + Postgres + Flyway + JWT (access + refresh)
 docker compose up -d
 ```
 
-2. Run the API:
+2. Run the API with the `local` profile:
 ```bash
-./mvnw spring-boot:run
+SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
 
 API: `http://localhost:8080`
+
+## Configuration & Secrets
+Default (`application.yml`) does not include sensitive defaults.
+
+Required environment variables for non-local environments:
+- `APP_SECURITY_JWT_SECRET`
+- `SPRING_DATASOURCE_URL`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+
+If these are missing outside local dev, application startup fails fast.
+
+Local development values are in `src/main/resources/application-local.yml` and only apply when `local` profile is active.
+
+Bash examples:
+```bash
+# Local dev
+SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
+
+# Non-local
+APP_SECURITY_JWT_SECRET='replace-with-strong-secret'
+SPRING_DATASOURCE_URL='jdbc:postgresql://db-host:5432/mambasplit'
+SPRING_DATASOURCE_USERNAME='mambasplit'
+SPRING_DATASOURCE_PASSWORD='replace-password'
+./mvnw spring-boot:run
+```
 
 ## Postgres Basic Commands
 Start Postgres container:
@@ -56,9 +82,18 @@ Integration tests run with Spring's `test` profile (`src/test/resources/applicat
 
 ## Windows (PowerShell)
 ```powershell
-.\mvnw.cmd spring-boot:run
+$env:SPRING_PROFILES_ACTIVE='local'; .\mvnw.cmd spring-boot:run
 .\mvnw.cmd test
 .\mvnw.cmd verify
+```
+
+Non-local PowerShell example:
+```powershell
+$env:APP_SECURITY_JWT_SECRET='replace-with-strong-secret'
+$env:SPRING_DATASOURCE_URL='jdbc:postgresql://db-host:5432/mambasplit'
+$env:SPRING_DATASOURCE_USERNAME='mambasplit'
+$env:SPRING_DATASOURCE_PASSWORD='replace-password'
+.\mvnw.cmd spring-boot:run
 ```
 
 ## Money

@@ -5,15 +5,15 @@ app:
   security:
     jwt:
       issuer: "mambasplit-api"
-      secret: "dev-secret-change-me-dev-secret-change-me"
+      secret: ${APP_SECURITY_JWT_SECRET}
       accessTokenMinutes: 15
       refreshTokenDays: 30
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/mambasplit
-    username: mambasplit
-    password: mambasplit
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     open-in-view: false
     hibernate:

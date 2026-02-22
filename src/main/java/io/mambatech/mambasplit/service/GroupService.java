@@ -6,6 +6,7 @@ import io.mambatech.mambasplit.domain.invite.Invite;
 import io.mambatech.mambasplit.repo.GroupMemberRepository;
 import io.mambatech.mambasplit.repo.GroupRepository;
 import io.mambatech.mambasplit.repo.InviteRepository;
+import io.mambatech.mambasplit.repo.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,9 +20,10 @@ public class GroupService {
   private final GroupRepository groups;
   private final GroupMemberRepository members;
   private final InviteRepository invites;
+  private final UserRepository users;
 
-  public GroupService(GroupRepository groups, GroupMemberRepository members, InviteRepository invites) {
-    this.groups = groups; this.members = members; this.invites = invites;
+  public GroupService(GroupRepository groups, GroupMemberRepository members, InviteRepository invites, UserRepository users) {
+    this.groups = groups; this.members = members; this.invites = invites; this.users = users;
   }
 
   @Transactional
@@ -59,6 +61,14 @@ public class GroupService {
   public void acceptInvite(String token, UUID userId) {
     Invite invite = invites.findByToken(token).orElseThrow(() -> new IllegalArgumentException("Invalid invite"));
     if (invite.getExpiresAt().isBefore(Instant.now())) throw new IllegalArgumentException("Invite expired");
+    String userEmail = users.findById(userId)
+      .orElseThrow(() -> new IllegalArgumentException("User not found"))
+      .getEmail();
+    if (!invite.getEmail().equalsIgnoreCase(userEmail)) {
+      throw new IllegalArgumentException("Invite email does not match authenticated user");
+    }
+    long deleted = invites.deleteByToken(token);
+    if (deleted == 0) throw new IllegalArgumentException("Invite already used");
     members.findByGroupIdAndUserId(invite.getGroupId(), userId).orElseGet(() ->
       members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, "MEMBER", Instant.now()))
     );

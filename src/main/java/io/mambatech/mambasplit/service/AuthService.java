@@ -60,11 +60,11 @@ public class AuthService {
   @Transactional
   public Tokens refresh(String refreshTokenRaw) {
     String hash = sha256Base64(refreshTokenRaw);
-    RefreshToken token = refreshTokens.findByTokenHash(hash).orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
-    if (token.getRevokedAt() != null) throw new IllegalArgumentException("Refresh token revoked");
-    if (token.getExpiresAt().isBefore(Instant.now())) throw new IllegalArgumentException("Refresh token expired");
-    token.revoke(Instant.now());
-    refreshTokens.save(token);
+    Instant now = Instant.now();
+    int revoked = refreshTokens.revokeIfActive(hash, now, now);
+    if (revoked == 0) throw new IllegalArgumentException("Invalid or expired refresh token");
+    RefreshToken token = refreshTokens.findByTokenHash(hash)
+      .orElseThrow(() -> new IllegalStateException("Refresh token not found after revoke"));
     User user = users.findById(token.getUserId()).orElseThrow();
     return issueTokens(user);
   }
