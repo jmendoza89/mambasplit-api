@@ -2,6 +2,8 @@ package io.mambatech.mambasplit.web;
 
 import io.mambatech.mambasplit.security.AuthPrincipal;
 import io.mambatech.mambasplit.service.GroupService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,8 +16,10 @@ public class InviteController {
     this.groups = groups;
   }
 
-  @PostMapping("/{token}/accept")
-  public void accept(@AuthenticationPrincipal AuthPrincipal principal, @PathVariable String token) {
-    groups.acceptInvite(token, principal.userId());
+  public record AcceptInviteRequest(@NotBlank String token) {}
+
+  @PostMapping("/accept")
+  public void accept(@AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody AcceptInviteRequest req) {
+    groups.acceptInvite(req.token(), principal.userId());
   }
 }

@@ -95,25 +95,25 @@ class GroupFlowIT extends ITBase {
     assertThat(token).isNotBlank();
 
     ResponseEntity<Map<String, Object>> wrongEmailAcceptResp = rest.exchange(
-      "/api/v1/invites/" + token + "/accept",
+      "/api/v1/invites/accept",
       HttpMethod.POST,
-      new HttpEntity<>(headersC),
+      new HttpEntity<>(Map.of("token", token), headersC),
       MAP_TYPE
     );
     assertThat(wrongEmailAcceptResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
     ResponseEntity<Void> acceptResp = rest.exchange(
-      "/api/v1/invites/" + token + "/accept",
+      "/api/v1/invites/accept",
       HttpMethod.POST,
-      new HttpEntity<>(headersB),
+      new HttpEntity<>(Map.of("token", token), headersB),
       Void.class
     );
     assertThat(acceptResp.getStatusCode()).isEqualTo(HttpStatus.OK);
 
     ResponseEntity<Map<String, Object>> reuseInviteResp = rest.exchange(
-      "/api/v1/invites/" + token + "/accept",
+      "/api/v1/invites/accept",
       HttpMethod.POST,
-      new HttpEntity<>(headersB),
+      new HttpEntity<>(Map.of("token", token), headersB),
       MAP_TYPE
     );
     assertThat(reuseInviteResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -130,9 +130,9 @@ class GroupFlowIT extends ITBase {
     assertThat(tokenForC).isNotBlank();
 
     ResponseEntity<Void> acceptCResp = rest.exchange(
-      "/api/v1/invites/" + tokenForC + "/accept",
+      "/api/v1/invites/accept",
       HttpMethod.POST,
-      new HttpEntity<>(headersC),
+      new HttpEntity<>(Map.of("token", tokenForC), headersC),
       Void.class
     );
     assertThat(acceptCResp.getStatusCode()).isEqualTo(HttpStatus.OK);

@@ -6,15 +6,13 @@ import io.mambatech.mambasplit.repo.RefreshTokenRepository;
 import io.mambatech.mambasplit.repo.UserRepository;
 import io.mambatech.mambasplit.security.AppSecurityProperties;
 import io.mambatech.mambasplit.security.JwtService;
+import io.mambatech.mambasplit.security.TokenCodec;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,8 +48,8 @@ public class AuthService {
   @Transactional
   public Tokens issueTokens(User user) {
     String access = jwtService.createAccessToken(user.getId(), user.getEmail());
-    String refresh = randomToken();
-    String refreshHash = sha256Base64(refresh);
+    String refresh = TokenCodec.randomUrlToken(48);
+    String refreshHash = TokenCodec.sha256Base64Url(refresh);
     Instant exp = Instant.now().plus(props.refreshTokenDays(), ChronoUnit.DAYS);
     refreshTokens.save(new RefreshToken(UUID.randomUUID(), user.getId(), refreshHash, exp, null, Instant.now()));
     return new Tokens(access, refresh);
@@ -59,7 +57,7 @@ public class AuthService {
 
   @Transactional
   public Tokens refresh(String refreshTokenRaw) {
-    String hash = sha256Base64(refreshTokenRaw);
+    String hash = TokenCodec.sha256Base64Url(refreshTokenRaw);
     Instant now = Instant.now();
     int revoked = refreshTokens.revokeIfActive(hash, now, now);
     if (revoked == 0) throw new IllegalArgumentException("Invalid or expired refresh token");
@@ -71,25 +69,9 @@ public class AuthService {
 
   @Transactional
   public void logout(String refreshTokenRaw) {
-    String hash = sha256Base64(refreshTokenRaw);
+    String hash = TokenCodec.sha256Base64Url(refreshTokenRaw);
     refreshTokens.findByTokenHash(hash).ifPresent(rt -> { rt.revoke(Instant.now()); refreshTokens.save(rt); });
   }
 
   public record Tokens(String accessToken, String refreshToken) {}
-
-  private static String randomToken() {
-    byte[] bytes = UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes) + "." +
-      Base64.getUrlEncoder().withoutPadding().encodeToString(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
-  }
-
-  private static String sha256Base64(String value) {
-    try {
-      MessageDigest md = MessageDigest.getInstance("SHA-256");
-      byte[] digest = md.digest(value.getBytes(StandardCharsets.UTF_8));
-      return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
-  }
 }
