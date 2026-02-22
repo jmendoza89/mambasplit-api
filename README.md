@@ -1,21 +1,21 @@
-# MambaSplit API (Spring Boot Skeleton)
+# MambaSplit API (Spring Boot Skeleton) 🚀
 
-Java 21 + Spring Boot + Postgres + Flyway + JWT (access+refresh)
+Java 21 + Spring Boot + Postgres + Flyway + JWT (access + refresh)
 
-## Quick start (local)
-1) Start Postgres
+## ⚡ Quick Start (Local)
+1. Start Postgres:
 ```bash
 docker compose up -d
 ```
 
-2) Run the API
+2. Run the API:
 ```bash
 ./mvnw spring-boot:run
 ```
 
-API: http://localhost:8080
+API: `http://localhost:8080`
 
-## Postgres basic commands
+## 🐘 Postgres Basic Commands
 Start Postgres container:
 ```bash
 docker compose up -d
@@ -33,19 +33,24 @@ Inside `psql`:
 \q
 ```
 
-## Test commands
+## 🧪 Test Commands
+Run unit and integration tests:
 ```bash
 ./mvnw test
 ./mvnw verify
 ```
+
 `./mvnw verify` runs integration tests like `*IT.java` via Maven Failsafe.
+
+## 🧹 Integration-Test Cleanup
 After ITs complete, Maven runs targeted DB cleanup for test users (`User A` / `User B`).
-To keep IT data for manual DB queries, disable cleanup for that run:
+
+Keep IT data for manual DB queries:
 ```bash
 ./mvnw verify -DskipItCleanup=true
 ```
 
-On Windows (PowerShell), use:
+## 🪟 Windows (PowerShell)
 ```powershell
 .\mvnw.cmd spring-boot:run
 .\mvnw.cmd test
@@ -53,6 +58,6 @@ On Windows (PowerShell), use:
 .\mvnw.cmd verify -DskipItCleanup=true
 ```
 
-## Money
+## 💰 Money
 All monetary values are stored as integer cents: `amount_cents BIGINT`.
 See `domain/money/Money.java`.
