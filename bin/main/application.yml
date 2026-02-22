@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+app:
+  security:
+    jwt:
+      issuer: "mambasplit-api"
+      secret: "dev-secret-change-me-dev-secret-change-me"
+      accessTokenMinutes: 15
+      refreshTokenDays: 30
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mambasplit
+    username: mambasplit
+    password: mambasplit
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true

@@ -1,0 +1,23 @@
+# Maven build output
+target/
+
+# Gradle leftovers (from previous build system)
+.gradle/
+build/
+
+# Java binaries and logs
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# IDE/editor files
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
