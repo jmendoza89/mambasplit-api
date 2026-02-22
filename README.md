@@ -15,6 +15,15 @@ SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 
 API: `http://localhost:8080`
 
+## Recent API/Security Changes
+- Invite acceptance endpoint changed from `POST /api/v1/invites/{token}/accept` to `POST /api/v1/invites/accept` with JSON body:
+```json
+{ "token": "invite-token-value" }
+```
+- Invite tokens are now hashed at rest (`invites.token_hash`), with migration `V2__invite_token_hash.sql`.
+- Public Swagger/OpenAPI access is only enabled in `local`, `dev`, and `test` profiles.
+- Error responses now include a machine-readable `code` field.
+
 ## Configuration & Secrets
 Default (`application.yml`) does not include sensitive defaults.
 

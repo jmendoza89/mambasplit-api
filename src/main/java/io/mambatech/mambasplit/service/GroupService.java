@@ -7,12 +7,16 @@ import io.mambatech.mambasplit.repo.GroupMemberRepository;
 import io.mambatech.mambasplit.repo.GroupRepository;
 import io.mambatech.mambasplit.repo.InviteRepository;
 import io.mambatech.mambasplit.repo.UserRepository;
+import io.mambatech.mambasplit.security.TokenCodec;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -45,21 +49,36 @@ public class GroupService {
   }
 
   public void requireMembers(UUID groupId, Iterable<UUID> userIds) {
+    Set<UUID> distinctUserIds = new HashSet<>();
     for (UUID userId : userIds) {
-      requireMember(groupId, userId);
+      distinctUserIds.add(userId);
+    }
+    if (distinctUserIds.isEmpty()) {
+      return;
+    }
+    long present = members.countByGroupIdAndUserIds(groupId, distinctUserIds);
+    if (present != distinctUserIds.size()) {
+      throw new IllegalArgumentException("One or more users are not members of this group");
     }
   }
 
+  public record CreatedInvite(String token, String email, Instant expiresAt) {}
+
   @Transactional
-  public Invite createInvite(UUID groupId, String email) {
-    String token = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
+  public CreatedInvite createInvite(UUID groupId, String email) {
+    String normalizedEmail = normalizeInviteEmail(email);
+    String token = TokenCodec.randomUrlToken(32);
+    String tokenHash = TokenCodec.sha256Base64Url(token);
     Instant now = Instant.now();
-    return invites.save(new Invite(UUID.randomUUID(), groupId, email.toLowerCase(), token, now.plus(7, ChronoUnit.DAYS), now));
+    Instant expiresAt = now.plus(7, ChronoUnit.DAYS);
+    invites.save(new Invite(UUID.randomUUID(), groupId, normalizedEmail, tokenHash, expiresAt, now));
+    return new CreatedInvite(token, normalizedEmail, expiresAt);
   }
 
   @Transactional
-  public void acceptInvite(String token, UUID userId) {
-    Invite invite = invites.findByToken(token).orElseThrow(() -> new IllegalArgumentException("Invalid invite"));
+  public void acceptInvite(String rawToken, UUID userId) {
+    String tokenHash = TokenCodec.sha256Base64Url(rawToken);
+    Invite invite = invites.findByTokenHash(tokenHash).orElseThrow(() -> new IllegalArgumentException("Invalid invite"));
     if (invite.getExpiresAt().isBefore(Instant.now())) throw new IllegalArgumentException("Invite expired");
     String userEmail = users.findById(userId)
       .orElseThrow(() -> new IllegalArgumentException("User not found"))
@@ -67,10 +86,18 @@ public class GroupService {
     if (!invite.getEmail().equalsIgnoreCase(userEmail)) {
       throw new IllegalArgumentException("Invite email does not match authenticated user");
     }
-    long deleted = invites.deleteByToken(token);
+    long deleted = invites.deleteByTokenHash(tokenHash);
     if (deleted == 0) throw new IllegalArgumentException("Invite already used");
     members.findByGroupIdAndUserId(invite.getGroupId(), userId).orElseGet(() ->
       members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, "MEMBER", Instant.now()))
     );
+  }
+
+  private String normalizeInviteEmail(String email) {
+    String normalized = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+    if (normalized.isBlank()) {
+      throw new IllegalArgumentException("Email is required");
+    }
+    return normalized;
   }
 }

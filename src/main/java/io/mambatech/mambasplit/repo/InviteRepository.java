@@ -7,6 +7,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface InviteRepository extends JpaRepository<Invite, UUID> {
-  Optional<Invite> findByToken(String token);
-  long deleteByToken(String token);
+  Optional<Invite> findByTokenHash(String tokenHash);
+  long deleteByTokenHash(String tokenHash);
 }

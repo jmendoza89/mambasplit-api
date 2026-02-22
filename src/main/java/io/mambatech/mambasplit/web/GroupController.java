@@ -1,10 +1,10 @@
 package io.mambatech.mambasplit.web;
 
 import io.mambatech.mambasplit.domain.group.Group;
-import io.mambatech.mambasplit.domain.invite.Invite;
 import io.mambatech.mambasplit.security.AuthPrincipal;
 import io.mambatech.mambasplit.service.GroupService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -37,9 +37,9 @@ public class GroupController {
     return groups.listGroupsForUser(principal.userId()).stream().map(GroupDto::from).toList();
   }
 
-  public record InviteRequest(@NotBlank String email) {}
+  public record InviteRequest(@NotBlank @Email @Size(max=320) String email) {}
   public record InviteDto(String token, String email, String expiresAt) {
-    static InviteDto from(Invite i) { return new InviteDto(i.getToken(), i.getEmail(), i.getExpiresAt().toString()); }
+    static InviteDto from(GroupService.CreatedInvite i) { return new InviteDto(i.token(), i.email(), i.expiresAt().toString()); }
   }
 
   @PostMapping("/{groupId}/invites")
