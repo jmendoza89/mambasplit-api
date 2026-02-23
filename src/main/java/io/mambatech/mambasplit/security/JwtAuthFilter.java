@@ -51,7 +51,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
       authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
       SecurityContextHolder.getContext().setAuthentication(authentication);
     } catch (Exception ignored) {
-      // ignore invalid token
+      SecurityContextHolder.clearContext();
+      response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token");
+      return;
     }
 
     filterChain.doFilter(request, response);

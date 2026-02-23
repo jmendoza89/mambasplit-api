@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface ExpenseSplitRepository extends JpaRepository<ExpenseSplit, UUID> {
   List<ExpenseSplit> findByExpenseId(UUID expenseId);
+  List<ExpenseSplit> findByExpenseIdIn(List<UUID> expenseIds);
 }

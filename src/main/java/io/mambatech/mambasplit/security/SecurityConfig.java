@@ -31,6 +31,11 @@ public class SecurityConfig {
     http
       .csrf(csrf -> csrf.disable())
       .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+      .exceptionHandling(ex -> ex
+        .authenticationEntryPoint((request, response, authException) ->
+          response.sendError(401, "Unauthorized"))
+        .accessDeniedHandler((request, response, accessDeniedException) ->
+          response.sendError(403, "Forbidden")))
       .authorizeHttpRequests(auth -> {
         auth.requestMatchers("/api/v1/auth/**").permitAll();
         if (isPublicDocsEnabled()) {

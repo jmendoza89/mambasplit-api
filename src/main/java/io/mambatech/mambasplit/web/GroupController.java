@@ -38,6 +38,93 @@ public class GroupController {
     return groups.listGroupsForUser(principal.userId()).stream().map(GroupDto::from).toList();
   }
 
+  public record GroupDetailsDto(
+    GroupInfoDto group,
+    MeInfoDto me,
+    List<MemberInfoDto> members,
+    List<ExpenseInfoDto> expenses,
+    SummaryDto summary
+  ) {
+    static GroupDetailsDto from(GroupService.GroupDetails details) {
+      return new GroupDetailsDto(
+        GroupInfoDto.from(details.group()),
+        MeInfoDto.from(details.me()),
+        details.members().stream().map(MemberInfoDto::from).toList(),
+        details.expenses().stream().map(ExpenseInfoDto::from).toList(),
+        SummaryDto.from(details.summary())
+      );
+    }
+  }
+
+  public record GroupInfoDto(String id, String name, String createdBy, String createdAt) {
+    static GroupInfoDto from(GroupService.GroupInfo g) {
+      return new GroupInfoDto(g.id().toString(), g.name(), g.createdBy().toString(), g.createdAt().toString());
+    }
+  }
+
+  public record MeInfoDto(String userId, String role, long netBalanceCents) {
+    static MeInfoDto from(GroupService.MeInfo m) {
+      return new MeInfoDto(m.userId().toString(), m.role(), m.netBalanceCents());
+    }
+  }
+
+  public record MemberInfoDto(
+    String userId,
+    String displayName,
+    String email,
+    String role,
+    String joinedAt,
+    long netBalanceCents
+  ) {
+    static MemberInfoDto from(GroupService.MemberInfo m) {
+      return new MemberInfoDto(
+        m.userId().toString(),
+        m.displayName(),
+        m.email(),
+        m.role(),
+        m.joinedAt().toString(),
+        m.netBalanceCents()
+      );
+    }
+  }
+
+  public record ExpenseInfoDto(
+    String id,
+    String description,
+    long amountCents,
+    String payerUserId,
+    String createdAt,
+    List<ExpenseSplitInfoDto> splits
+  ) {
+    static ExpenseInfoDto from(GroupService.ExpenseInfo e) {
+      return new ExpenseInfoDto(
+        e.id().toString(),
+        e.description(),
+        e.amountCents(),
+        e.payerUserId().toString(),
+        e.createdAt().toString(),
+        e.splits().stream().map(ExpenseSplitInfoDto::from).toList()
+      );
+    }
+  }
+
+  public record ExpenseSplitInfoDto(String userId, long amountOwedCents) {
+    static ExpenseSplitInfoDto from(GroupService.ExpenseSplitInfo s) {
+      return new ExpenseSplitInfoDto(s.userId().toString(), s.amountOwedCents());
+    }
+  }
+
+  public record SummaryDto(int expenseCount, long totalExpenseAmountCents) {
+    static SummaryDto from(GroupService.Summary s) {
+      return new SummaryDto(s.expenseCount(), s.totalExpenseAmountCents());
+    }
+  }
+
+  @GetMapping("/{groupId}/details")
+  public GroupDetailsDto details(@AuthenticationPrincipal AuthPrincipal principal, @PathVariable String groupId) {
+    return GroupDetailsDto.from(groups.getGroupDetails(UUID.fromString(groupId), principal.userId()));
+  }
+
   @DeleteMapping("/{groupId}")
   public ResponseEntity<Void> delete(@AuthenticationPrincipal AuthPrincipal principal, @PathVariable String groupId) {
     groups.deleteGroup(UUID.fromString(groupId), principal.userId());
