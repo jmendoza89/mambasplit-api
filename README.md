@@ -14,6 +14,7 @@ SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
 
 API: `http://localhost:8080`
+Frontend UI (separate repo): `C:\MambaSplit\mambasplit-web` on `http://localhost:5173`
 
 ## Recent API/Security Changes
 - Invite acceptance endpoint changed from `POST /api/v1/invites/{token}/accept` to `POST /api/v1/invites/accept` with JSON body:
@@ -23,6 +24,14 @@ API: `http://localhost:8080`
 - Invite tokens are now hashed at rest (`invites.token_hash`), with migration `V2__invite_token_hash.sql`.
 - Public Swagger/OpenAPI access is only enabled in `local`, `dev`, and `test` profiles.
 - Error responses now include a machine-readable `code` field.
+
+## Frontend
+The frontend is maintained in a separate repo:
+- `C:\MambaSplit\mambasplit-web`
+
+Run it with Vite while this API runs locally:
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:8080`
 
 ## Configuration & Secrets
 Default (`application.yml`) does not include sensitive defaults.
