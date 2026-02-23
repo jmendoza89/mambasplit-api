@@ -44,6 +44,15 @@ public class GroupService {
     return groups.findAllById(ids);
   }
 
+  @Transactional
+  public void deleteGroup(UUID groupId, UUID actorUserId) {
+    Group group = groups.findById(groupId).orElseThrow(() -> new IllegalArgumentException("Group not found"));
+    if (!group.getCreatedBy().equals(actorUserId)) {
+      throw new IllegalArgumentException("Only the group owner can delete this group");
+    }
+    groups.delete(group);
+  }
+
   public void requireMember(UUID groupId, UUID userId) {
     members.findByGroupIdAndUserId(groupId, userId).orElseThrow(() -> new IllegalArgumentException("Not a member of this group"));
   }

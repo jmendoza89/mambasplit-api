@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,6 +36,12 @@ public class GroupController {
   @GetMapping
   public List<GroupDto> list(@AuthenticationPrincipal AuthPrincipal principal) {
     return groups.listGroupsForUser(principal.userId()).stream().map(GroupDto::from).toList();
+  }
+
+  @DeleteMapping("/{groupId}")
+  public ResponseEntity<Void> delete(@AuthenticationPrincipal AuthPrincipal principal, @PathVariable String groupId) {
+    groups.deleteGroup(UUID.fromString(groupId), principal.userId());
+    return ResponseEntity.noContent().build();
   }
 
   public record InviteRequest(@NotBlank @Email @Size(max=320) String email) {}

@@ -82,6 +82,14 @@ class GroupFlowIT extends ITBase {
     assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
     String groupId = (String) groupResp.getBody().get("id");
     assertThat(groupId).isNotBlank();
+    ResponseEntity<List<Map<String, Object>>> groupsForAResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.GET,
+      new HttpEntity<>(headersA),
+      new ParameterizedTypeReference<>() {}
+    );
+    assertThat(groupsForAResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(groupsForAResp.getBody()).extracting(g -> g.get("id")).contains(groupId);
 
     Map<String, Object> inviteBody = Map.of("email", emailB);
     ResponseEntity<Map<String, Object>> inviteResp = rest.exchange(
@@ -152,5 +160,100 @@ class GroupFlowIT extends ITBase {
     );
     assertThat(expenseResp.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat((String) expenseResp.getBody().get("expenseId")).isNotBlank();
+  }
+
+  @Test
+  void groupOwnerCanDeleteButMemberCannot() {
+    String emailA = "user_" + UUID.randomUUID() + "@example.com";
+    String emailB = "user_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    Map<String, Object> signupA = Map.of("email", emailA, "password", password, "displayName", "Owner");
+    Map<String, Object> signupB = Map.of("email", emailB, "password", password, "displayName", "Member");
+
+    ResponseEntity<Map<String, Object>> signupRespA = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(signupA),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupRespB = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(signupB),
+      MAP_TYPE
+    );
+    assertThat(signupRespA.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupRespB.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String accessA = (String) signupRespA.getBody().get("accessToken");
+    String accessB = (String) signupRespB.getBody().get("accessToken");
+
+    HttpHeaders headersA = new HttpHeaders();
+    headersA.setBearerAuth(accessA);
+    headersA.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders headersB = new HttpHeaders();
+    headersB.setBearerAuth(accessB);
+    headersB.setContentType(MediaType.APPLICATION_JSON);
+
+    ResponseEntity<Map<String, Object>> groupResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "Delete Group"), headersA),
+      MAP_TYPE
+    );
+    assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId = (String) groupResp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> inviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB), headersA),
+      MAP_TYPE
+    );
+    assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String token = (String) inviteResp.getBody().get("token");
+
+    ResponseEntity<Void> acceptResp = rest.exchange(
+      "/api/v1/invites/accept",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("token", token), headersB),
+      Void.class
+    );
+    assertThat(acceptResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<Map<String, Object>> memberDeleteResp = rest.exchange(
+      "/api/v1/groups/" + groupId,
+      HttpMethod.DELETE,
+      new HttpEntity<>(headersB),
+      MAP_TYPE
+    );
+    assertThat(memberDeleteResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+    ResponseEntity<Void> ownerDeleteResp = rest.exchange(
+      "/api/v1/groups/" + groupId,
+      HttpMethod.DELETE,
+      new HttpEntity<>(headersA),
+      Void.class
+    );
+    assertThat(ownerDeleteResp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+    ResponseEntity<List<Map<String, Object>>> groupsForOwnerResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.GET,
+      new HttpEntity<>(headersA),
+      new ParameterizedTypeReference<>() {}
+    );
+    ResponseEntity<List<Map<String, Object>>> groupsForMemberResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.GET,
+      new HttpEntity<>(headersB),
+      new ParameterizedTypeReference<>() {}
+    );
+    assertThat(groupsForOwnerResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(groupsForMemberResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(groupsForOwnerResp.getBody()).extracting(g -> g.get("id")).doesNotContain(groupId);
+    assertThat(groupsForMemberResp.getBody()).extracting(g -> g.get("id")).doesNotContain(groupId);
   }
 }
