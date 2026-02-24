@@ -21,6 +21,7 @@ public class AuthController {
   public record SignupRequest(@Email @NotBlank String email, @NotBlank @Size(min=8,max=200) String password,
                               @NotBlank @Size(max=120) String displayName) {}
   public record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {}
+  public record GoogleAuthRequest(@NotBlank String idToken) {}
   public record RefreshRequest(@NotBlank String refreshToken) {}
   public record LogoutRequest(@NotBlank String refreshToken) {}
 
@@ -39,6 +40,13 @@ public class AuthController {
   @PostMapping("/login")
   public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest req) {
     User u = auth.authenticate(req.email(), req.password()).orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
+    var tokens = auth.issueTokens(u);
+    return ResponseEntity.ok(new AuthResponse(tokens.accessToken(), tokens.refreshToken(), UserDto.from(u)));
+  }
+
+  @PostMapping("/google")
+  public ResponseEntity<AuthResponse> google(@Valid @RequestBody GoogleAuthRequest req) {
+    User u = auth.authenticateGoogle(req.idToken());
     var tokens = auth.issueTokens(u);
     return ResponseEntity.ok(new AuthResponse(tokens.accessToken(), tokens.refreshToken(), UserDto.from(u)));
   }
