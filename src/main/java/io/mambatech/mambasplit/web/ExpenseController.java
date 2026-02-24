@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -62,5 +63,13 @@ public class ExpenseController {
     groups.requireMembers(gid, memberIds);
     UUID id = expenseService.createExactSplitExpense(gid, payer, req.description(), req.amountCents(), items);
     return new CreateExpenseResponse(id.toString());
+  }
+
+  @DeleteMapping("/{expenseId}")
+  public ResponseEntity<Void> delete(@AuthenticationPrincipal AuthPrincipal principal, @PathVariable String groupId, @PathVariable String expenseId) {
+    UUID gid = UUID.fromString(groupId);
+    groups.requireMember(gid, principal.userId());
+    expenseService.deleteExpense(gid, UUID.fromString(expenseId), principal.userId());
+    return ResponseEntity.noContent().build();
   }
 }
