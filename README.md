@@ -3,12 +3,20 @@
 Java 21 + Spring Boot + Postgres + Flyway + JWT (access + refresh)
 
 ## Quick Start (Local)
-1. Start Postgres:
+1. Start API (includes Docker preflight and Postgres startup):
+```powershell
+.\scripts\start-local.ps1
+# Optional: .\scripts\start-local.ps1 -SkipTests
+```
+
+2. Or run steps manually.
+
+Start Postgres:
 ```bash
 docker compose up -d
 ```
 
-2. Run the API with the `local` profile:
+Run the API with the `local` profile:
 ```bash
 SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
@@ -103,6 +111,9 @@ Integration tests run with Spring's `test` profile (`src/test/resources/applicat
 
 ## Windows (PowerShell)
 ```powershell
+.\scripts\start-local.ps1
+
+# Or manual startup
 $env:SPRING_PROFILES_ACTIVE='local'; .\mvnw.cmd spring-boot:run
 .\mvnw.cmd test
 .\mvnw.cmd verify
