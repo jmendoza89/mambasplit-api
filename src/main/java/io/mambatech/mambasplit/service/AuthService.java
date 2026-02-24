@@ -23,14 +23,16 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
   private final AppSecurityProperties props;
+  private final GoogleTokenVerifier googleTokenVerifier;
 
   public AuthService(UserRepository users, RefreshTokenRepository refreshTokens, PasswordEncoder passwordEncoder,
-                     JwtService jwtService, AppSecurityProperties props) {
+                     JwtService jwtService, AppSecurityProperties props, GoogleTokenVerifier googleTokenVerifier) {
     this.users = users;
     this.refreshTokens = refreshTokens;
     this.passwordEncoder = passwordEncoder;
     this.jwtService = jwtService;
     this.props = props;
+    this.googleTokenVerifier = googleTokenVerifier;
   }
 
   @Transactional
@@ -43,6 +45,28 @@ public class AuthService {
 
   public Optional<User> authenticate(String email, String rawPassword) {
     return users.findByEmailIgnoreCase(email).filter(u -> passwordEncoder.matches(rawPassword, u.getPasswordHash()));
+  }
+
+  @Transactional
+  public User authenticateGoogle(String idToken) {
+    GoogleTokenVerifier.GoogleUser googleUser = googleTokenVerifier.verify(idToken);
+    if (!googleUser.emailVerified()) throw new IllegalArgumentException("Google email is not verified");
+
+    return users.findByGoogleSub(googleUser.sub()).map(user -> updateFromGoogle(user, googleUser)).orElseGet(() -> {
+      User byEmail = users.findByEmailIgnoreCase(googleUser.email())
+        .orElseGet(() -> createGoogleUser(googleUser));
+
+      if (byEmail.getGoogleSub() == null) {
+        byEmail.setGoogleSub(googleUser.sub());
+        return updateFromGoogle(byEmail, googleUser);
+      }
+
+      if (!googleUser.sub().equals(byEmail.getGoogleSub())) {
+        throw new IllegalArgumentException("Email already linked to a different Google account");
+      }
+
+      return updateFromGoogle(byEmail, googleUser);
+    });
   }
 
   @Transactional
@@ -71,6 +95,22 @@ public class AuthService {
   public void logout(String refreshTokenRaw) {
     String hash = TokenCodec.sha256Base64Url(refreshTokenRaw);
     refreshTokens.findByTokenHash(hash).ifPresent(rt -> { rt.revoke(Instant.now()); refreshTokens.save(rt); });
+  }
+
+  private User updateFromGoogle(User user, GoogleTokenVerifier.GoogleUser googleUser) {
+    // Keep existing profile unless it's effectively empty.
+    if (user.getDisplayName() == null || user.getDisplayName().isBlank()) {
+      String fallback = (googleUser.name() != null && !googleUser.name().isBlank()) ? googleUser.name() : user.getEmail();
+      user.setDisplayName(fallback);
+    }
+    return user;
+  }
+
+  private User createGoogleUser(GoogleTokenVerifier.GoogleUser googleUser) {
+    UUID id = UUID.randomUUID();
+    String displayName = (googleUser.name() != null && !googleUser.name().isBlank()) ? googleUser.name() : googleUser.email();
+    String passwordHash = passwordEncoder.encode(TokenCodec.randomUrlToken(48));
+    return users.save(new User(id, googleUser.email().toLowerCase(), passwordHash, displayName, Instant.now(), googleUser.sub()));
   }
 
   public record Tokens(String accessToken, String refreshToken) {}
