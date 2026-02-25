@@ -64,4 +64,15 @@ public class ExpenseService {
     }
     return expenseId;
   }
+
+  @Transactional
+  public void deleteExpense(UUID groupId, UUID expenseId, UUID actorUserId) {
+    Expense expense = expenses.findByIdAndGroupId(expenseId, groupId)
+      .orElseThrow(() -> new IllegalArgumentException("Expense not found"));
+    if (!expense.getPayerUserId().equals(actorUserId)) {
+      throw new IllegalArgumentException("Only the expense owner can delete this expense");
+    }
+    splits.deleteByExpenseId(expenseId);
+    expenses.delete(expense);
+  }
 }

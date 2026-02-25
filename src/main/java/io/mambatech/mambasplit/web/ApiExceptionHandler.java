@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.stream.Collectors;
@@ -14,6 +15,13 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class ApiExceptionHandler {
   public record ErrorResponse(String code, String message, String timestamp) {}
+
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<ErrorResponse> responseStatusException(ResponseStatusException ex) {
+    String message = (ex.getReason() == null || ex.getReason().isBlank()) ? "Request failed." : ex.getReason();
+    return ResponseEntity.status(ex.getStatusCode())
+      .body(new ErrorResponse(ex.getStatusCode().toString(), message, Instant.now().toString()));
+  }
 
   @ExceptionHandler(IllegalArgumentException.class)
   public ResponseEntity<ErrorResponse> badRequest(IllegalArgumentException ex) {

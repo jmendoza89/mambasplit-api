@@ -3,12 +3,20 @@
 Java 21 + Spring Boot + Postgres + Flyway + JWT (access + refresh)
 
 ## Quick Start (Local)
-1. Start Postgres:
+1. Start API (includes Docker preflight and Postgres startup):
+```powershell
+.\scripts\start-local.ps1
+# Optional: .\scripts\start-local.ps1 -SkipTests
+```
+
+2. Or run steps manually.
+
+Start Postgres:
 ```bash
 docker compose up -d
 ```
 
-2. Run the API with the `local` profile:
+Run the API with the `local` profile:
 ```bash
 SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
@@ -22,6 +30,8 @@ Frontend UI (separate repo): `C:\MambaSplit\mambasplit-web` on `http://localhost
 { "token": "invite-token-value" }
 ```
 - Invite tokens are now hashed at rest (`invites.token_hash`), with migration `V2__invite_token_hash.sql`.
+- Group creators are automatically added to `group_members` as `OWNER` when a group is created.
+- Group deletion endpoint added: `DELETE /api/v1/groups/{groupId}` (owner-only).
 - Public Swagger/OpenAPI access is only enabled in `local`, `dev`, and `test` profiles.
 - Error responses now include a machine-readable `code` field.
 
@@ -38,6 +48,7 @@ Default (`application.yml`) does not include sensitive defaults.
 
 Required environment variables for non-local environments:
 - `APP_SECURITY_JWT_SECRET`
+- `APP_SECURITY_GOOGLE_CLIENT_ID` (required for `POST /api/v1/auth/google`)
 - `SPRING_DATASOURCE_URL`
 - `SPRING_DATASOURCE_USERNAME`
 - `SPRING_DATASOURCE_PASSWORD`
@@ -100,6 +111,9 @@ Integration tests run with Spring's `test` profile (`src/test/resources/applicat
 
 ## Windows (PowerShell)
 ```powershell
+.\scripts\start-local.ps1
+
+# Or manual startup
 $env:SPRING_PROFILES_ACTIVE='local'; .\mvnw.cmd spring-boot:run
 .\mvnw.cmd test
 .\mvnw.cmd verify

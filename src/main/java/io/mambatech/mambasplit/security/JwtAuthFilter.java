@@ -27,6 +27,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
   }
 
   @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) {
+    return request.getServletPath().startsWith("/api/v1/auth/");
+  }
+
+  @Override
   protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
 
@@ -51,7 +56,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
       authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
       SecurityContextHolder.getContext().setAuthentication(authentication);
     } catch (Exception ignored) {
-      // ignore invalid token
+      SecurityContextHolder.clearContext();
+      response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token");
+      return;
     }
 
     filterChain.doFilter(request, response);

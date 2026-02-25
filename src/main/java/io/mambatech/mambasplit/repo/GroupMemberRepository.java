@@ -12,6 +12,7 @@ import java.util.UUID;
 
 public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> {
   List<GroupMember> findByUserId(UUID userId);
+  List<GroupMember> findByGroupId(UUID groupId);
   Optional<GroupMember> findByGroupIdAndUserId(UUID groupId, UUID userId);
 
   @Query("""

@@ -8,6 +8,8 @@ app:
       secret: ${APP_SECURITY_JWT_SECRET}
       accessTokenMinutes: 15
       refreshTokenDays: 30
+    google:
+      client-id: ${APP_SECURITY_GOOGLE_CLIENT_ID:}
 
 spring:
   datasource:
