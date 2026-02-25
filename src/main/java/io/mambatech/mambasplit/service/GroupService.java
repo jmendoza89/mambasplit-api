@@ -164,16 +164,66 @@ public class GroupService {
   }
 
   public record CreatedInvite(String token, String email, Instant expiresAt) {}
+  public record PendingInvite(UUID id, UUID groupId, String groupName, String email, Instant expiresAt, Instant createdAt) {}
+
+  @Transactional(readOnly = true)
+  public List<PendingInvite> listPendingInvitesForEmail(String email, UUID requesterUserId) {
+    String normalizedQueryEmail = normalizeInviteEmail(email);
+    String requesterEmail = users.findById(requesterUserId)
+      .orElseThrow(() -> new IllegalArgumentException("User not found"))
+      .getEmail();
+    String normalizedRequesterEmail = normalizeInviteEmail(requesterEmail);
+    if (!normalizedQueryEmail.equals(normalizedRequesterEmail)) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot list invites for another user");
+    }
+
+    return invites.findPendingByEmail(normalizedQueryEmail, Instant.now()).stream()
+      .map(i -> new PendingInvite(
+        i.getId(),
+        i.getGroupId(),
+        i.getGroupName(),
+        normalizeInviteEmail(i.getEmail()),
+        i.getExpiresAt(),
+        i.getCreatedAt()
+      ))
+      .toList();
+  }
 
   @Transactional
   public CreatedInvite createInvite(UUID groupId, String email) {
     String normalizedEmail = normalizeInviteEmail(email);
+    users.findByEmailIgnoreCase(normalizedEmail).ifPresent(user -> {
+      if (members.findByGroupIdAndUserId(groupId, user.getId()).isPresent()) {
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "User is already a member of this group");
+      }
+    });
+
+    Instant now = Instant.now();
+    invites.findByGroupIdAndEmailIgnoreCase(groupId, normalizedEmail).ifPresent(existingInvite -> {
+      if (existingInvite.getExpiresAt().isAfter(now)) {
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Invite already pending for this email in this group");
+      }
+      invites.delete(existingInvite);
+    });
+
     String token = TokenCodec.randomUrlToken(32);
     String tokenHash = TokenCodec.sha256Base64Url(token);
-    Instant now = Instant.now();
     Instant expiresAt = now.plus(7, ChronoUnit.DAYS);
     invites.save(new Invite(UUID.randomUUID(), groupId, normalizedEmail, tokenHash, expiresAt, now));
     return new CreatedInvite(token, normalizedEmail, expiresAt);
+  }
+
+  @Transactional
+  public void cancelInvite(UUID groupId, String rawToken, UUID actorUserId) {
+    requireMember(groupId, actorUserId);
+    if (rawToken == null || rawToken.isBlank()) {
+      throw new IllegalArgumentException("Invite token is required");
+    }
+    String tokenHash = TokenCodec.sha256Base64Url(rawToken);
+    long deleted = invites.deleteByGroupIdAndTokenHash(groupId, tokenHash);
+    if (deleted == 0) {
+      throw new IllegalArgumentException("Invite not found");
+    }
   }
 
   @Transactional
@@ -188,6 +238,23 @@ public class GroupService {
       throw new IllegalArgumentException("Invite email does not match authenticated user");
     }
     long deleted = invites.deleteByTokenHash(tokenHash);
+    if (deleted == 0) throw new IllegalArgumentException("Invite already used");
+    members.findByGroupIdAndUserId(invite.getGroupId(), userId).orElseGet(() ->
+      members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, "MEMBER", Instant.now()))
+    );
+  }
+
+  @Transactional
+  public void acceptInviteById(UUID inviteId, UUID userId) {
+    Invite invite = invites.findById(inviteId).orElseThrow(() -> new IllegalArgumentException("Invalid invite"));
+    if (invite.getExpiresAt().isBefore(Instant.now())) throw new IllegalArgumentException("Invite expired");
+    String userEmail = users.findById(userId)
+      .orElseThrow(() -> new IllegalArgumentException("User not found"))
+      .getEmail();
+    if (!invite.getEmail().equalsIgnoreCase(userEmail)) {
+      throw new IllegalArgumentException("Invite email does not match authenticated user");
+    }
+    long deleted = invites.deleteByIdAndTokenHash(invite.getId(), invite.getTokenHash());
     if (deleted == 0) throw new IllegalArgumentException("Invite already used");
     members.findByGroupIdAndUserId(invite.getGroupId(), userId).orElseGet(() ->
       members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, "MEMBER", Instant.now()))

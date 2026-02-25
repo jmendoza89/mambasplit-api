@@ -32,6 +32,9 @@ Frontend UI (separate repo): `C:\MambaSplit\mambasplit-web` on `http://localhost
 - Invite tokens are now hashed at rest (`invites.token_hash`), with migration `V2__invite_token_hash.sql`.
 - Group creators are automatically added to `group_members` as `OWNER` when a group is created.
 - Group deletion endpoint added: `DELETE /api/v1/groups/{groupId}` (owner-only).
+- Invite cancellation endpoint added: `DELETE /api/v1/groups/{groupId}/invites/{token}` (group-member only).
+- Pending invites endpoint added: `GET /api/v1/invites?email=<authenticated-user-email>`.
+- Invite creation now enforces no duplicate pending invite per `(group, email)` and rejects inviting existing group members (`409 CONFLICT`).
 - Public Swagger/OpenAPI access is only enabled in `local`, `dev`, and `test` profiles.
 - Error responses now include a machine-readable `code` field.
 

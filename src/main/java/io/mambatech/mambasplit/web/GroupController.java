@@ -142,4 +142,14 @@ public class GroupController {
     groups.requireMember(gid, principal.userId());
     return InviteDto.from(groups.createInvite(gid, req.email()));
   }
+
+  @DeleteMapping("/{groupId}/invites/{token}")
+  public ResponseEntity<Void> cancelInvite(
+    @AuthenticationPrincipal AuthPrincipal principal,
+    @PathVariable String groupId,
+    @PathVariable String token
+  ) {
+    groups.cancelInvite(UUID.fromString(groupId), token, principal.userId());
+    return ResponseEntity.noContent().build();
+  }
 }

@@ -1,11 +1,14 @@
 package io.mambatech.mambasplit;
 
+import io.mambatech.mambasplit.security.TokenCodec;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -14,7 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class GroupFlowIT extends ITBase {
   @Autowired private TestRestTemplate rest;
+  @Autowired private JdbcTemplate jdbcTemplate;
   private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
+    new ParameterizedTypeReference<>() {};
+  private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_OF_MAP_TYPE =
     new ParameterizedTypeReference<>() {};
 
   @Test
@@ -399,6 +405,580 @@ class GroupFlowIT extends ITBase {
     assertThat(summary.get("expenseCount")).isEqualTo(0);
     assertThat(((Number) summary.get("totalExpenseAmountCents")).longValue()).isEqualTo(0L);
     assertThat(expenses).isEmpty();
+  }
+
+  @Test
+  void memberCanCancelInviteAndCanceledInviteCannotBeAccepted() {
+    String emailA = "user_" + UUID.randomUUID() + "@example.com";
+    String emailB = "user_" + UUID.randomUUID() + "@example.com";
+    String emailC = "user_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupRespA = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailA, "password", password, "displayName", "Owner")),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupRespB = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB, "password", password, "displayName", "Invitee")),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupRespC = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailC, "password", password, "displayName", "Outsider")),
+      MAP_TYPE
+    );
+    assertThat(signupRespA.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupRespB.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupRespC.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String accessA = (String) signupRespA.getBody().get("accessToken");
+    String accessB = (String) signupRespB.getBody().get("accessToken");
+    String accessC = (String) signupRespC.getBody().get("accessToken");
+
+    HttpHeaders headersA = new HttpHeaders();
+    headersA.setBearerAuth(accessA);
+    headersA.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders headersB = new HttpHeaders();
+    headersB.setBearerAuth(accessB);
+    headersB.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders headersC = new HttpHeaders();
+    headersC.setBearerAuth(accessC);
+    headersC.setContentType(MediaType.APPLICATION_JSON);
+
+    ResponseEntity<Map<String, Object>> groupResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "Cancelable Invite"), headersA),
+      MAP_TYPE
+    );
+    assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId = (String) groupResp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> inviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB), headersA),
+      MAP_TYPE
+    );
+    assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String token = (String) inviteResp.getBody().get("token");
+
+    ResponseEntity<Map<String, Object>> outsiderCancelResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites/" + token,
+      HttpMethod.DELETE,
+      new HttpEntity<>(headersC),
+      MAP_TYPE
+    );
+    assertThat(outsiderCancelResp.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+    ResponseEntity<Void> cancelResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites/" + token,
+      HttpMethod.DELETE,
+      new HttpEntity<>(headersA),
+      Void.class
+    );
+    assertThat(cancelResp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+    ResponseEntity<Map<String, Object>> acceptAfterCancelResp = rest.exchange(
+      "/api/v1/invites/accept",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("token", token), headersB),
+      MAP_TYPE
+    );
+    assertThat(acceptAfterCancelResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+    ResponseEntity<Map<String, Object>> secondCancelResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites/" + token,
+      HttpMethod.DELETE,
+      new HttpEntity<>(headersA),
+      MAP_TYPE
+    );
+    assertThat(secondCancelResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void listPendingInvitesReturnsOnlyMatchingUserPendingInvitesNewestFirst() {
+    String emailA = "owner_" + UUID.randomUUID() + "@example.com";
+    String emailB = "invitee_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupRespA = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailA, "password", password, "displayName", "Owner")),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupRespB = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB, "password", password, "displayName", "Invitee")),
+      MAP_TYPE
+    );
+    assertThat(signupRespA.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupRespB.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String accessA = (String) signupRespA.getBody().get("accessToken");
+    String accessB = (String) signupRespB.getBody().get("accessToken");
+    String normalizedEmailB = emailB.trim().toLowerCase();
+
+    HttpHeaders headersA = new HttpHeaders();
+    headersA.setBearerAuth(accessA);
+    headersA.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders headersB = new HttpHeaders();
+    headersB.setBearerAuth(accessB);
+
+    ResponseEntity<Map<String, Object>> group1Resp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "Trip A"), headersA),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> group2Resp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "Trip B"), headersA),
+      MAP_TYPE
+    );
+    assertThat(group1Resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(group2Resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId1 = (String) group1Resp.getBody().get("id");
+    String groupId2 = (String) group2Resp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> invite1Resp = rest.exchange(
+      "/api/v1/groups/" + groupId1 + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB), headersA),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> invite2Resp = rest.exchange(
+      "/api/v1/groups/" + groupId2 + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB.toUpperCase()), headersA),
+      MAP_TYPE
+    );
+    assertThat(invite1Resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(invite2Resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<List<Map<String, Object>>> listResp = rest.exchange(
+      "/api/v1/invites?email=" + normalizedEmailB,
+      HttpMethod.GET,
+      new HttpEntity<>(headersB),
+      LIST_OF_MAP_TYPE
+    );
+    assertThat(listResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(listResp.getBody()).hasSize(2);
+
+    List<Map<String, Object>> invites = listResp.getBody();
+    assertThat(invites).extracting(i -> i.get("groupName")).containsExactly("Trip B", "Trip A");
+    assertThat(invites).allSatisfy(invite -> {
+      assertThat(invite).containsKeys("id", "groupId", "groupName", "email", "expiresAt", "createdAt");
+      assertThat(invite).doesNotContainKeys("tokenHash", "token");
+      assertThat((String) invite.get("email")).isEqualTo(normalizedEmailB);
+    });
+
+    Instant createdAt0 = Instant.parse((String) invites.get(0).get("createdAt"));
+    Instant createdAt1 = Instant.parse((String) invites.get(1).get("createdAt"));
+    assertThat(createdAt0).isAfterOrEqualTo(createdAt1);
+  }
+
+  @Test
+  void listPendingInvitesReturnsEmptyWhenNoneExist() {
+    String email = "user_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupResp = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", email, "password", password, "displayName", "User")),
+      MAP_TYPE
+    );
+    assertThat(signupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String access = (String) signupResp.getBody().get("accessToken");
+    HttpHeaders headers = new HttpHeaders();
+    headers.setBearerAuth(access);
+
+    ResponseEntity<List<Map<String, Object>>> listResp = rest.exchange(
+      "/api/v1/invites?email=" + email.toLowerCase(),
+      HttpMethod.GET,
+      new HttpEntity<>(headers),
+      LIST_OF_MAP_TYPE
+    );
+    assertThat(listResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(listResp.getBody()).isEmpty();
+  }
+
+  @Test
+  void listPendingInvitesForbiddenWhenQueryEmailDoesNotMatchAuthenticatedUser() {
+    String email = "user_" + UUID.randomUUID() + "@example.com";
+    String otherEmail = "other_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupResp = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", email, "password", password, "displayName", "User")),
+      MAP_TYPE
+    );
+    assertThat(signupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String access = (String) signupResp.getBody().get("accessToken");
+    HttpHeaders headers = new HttpHeaders();
+    headers.setBearerAuth(access);
+
+    ResponseEntity<Map<String, Object>> listResp = rest.exchange(
+      "/api/v1/invites?email=" + otherEmail,
+      HttpMethod.GET,
+      new HttpEntity<>(headers),
+      MAP_TYPE
+    );
+    assertThat(listResp.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+  }
+
+  @Test
+  void listPendingInvitesExcludesExpiredInvites() {
+    String emailA = "owner_" + UUID.randomUUID() + "@example.com";
+    String emailB = "invitee_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupRespA = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailA, "password", password, "displayName", "Owner")),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupRespB = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB, "password", password, "displayName", "Invitee")),
+      MAP_TYPE
+    );
+    assertThat(signupRespA.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupRespB.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String accessA = (String) signupRespA.getBody().get("accessToken");
+    String accessB = (String) signupRespB.getBody().get("accessToken");
+
+    HttpHeaders headersA = new HttpHeaders();
+    headersA.setBearerAuth(accessA);
+    headersA.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders headersB = new HttpHeaders();
+    headersB.setBearerAuth(accessB);
+
+    ResponseEntity<Map<String, Object>> groupResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "Expire Me"), headersA),
+      MAP_TYPE
+    );
+    assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId = (String) groupResp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> inviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB), headersA),
+      MAP_TYPE
+    );
+    assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String token = (String) inviteResp.getBody().get("token");
+
+    String tokenHash = TokenCodec.sha256Base64Url(token);
+    int updated = jdbcTemplate.update(
+      "UPDATE invites SET expires_at = now() - interval '1 minute' WHERE token_hash = ?",
+      tokenHash
+    );
+    assertThat(updated).isEqualTo(1);
+
+    ResponseEntity<List<Map<String, Object>>> listResp = rest.exchange(
+      "/api/v1/invites?email=" + emailB.toLowerCase(),
+      HttpMethod.GET,
+      new HttpEntity<>(headersB),
+      LIST_OF_MAP_TYPE
+    );
+    assertThat(listResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(listResp.getBody()).isEmpty();
+  }
+
+  @Test
+  void listPendingInvitesExcludesInvitesFromDeletedGroups() {
+    String emailA = "owner_" + UUID.randomUUID() + "@example.com";
+    String emailB = "invitee_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupRespA = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailA, "password", password, "displayName", "Owner")),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupRespB = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB, "password", password, "displayName", "Invitee")),
+      MAP_TYPE
+    );
+    assertThat(signupRespA.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupRespB.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String accessA = (String) signupRespA.getBody().get("accessToken");
+    String accessB = (String) signupRespB.getBody().get("accessToken");
+
+    HttpHeaders headersA = new HttpHeaders();
+    headersA.setBearerAuth(accessA);
+    headersA.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders headersB = new HttpHeaders();
+    headersB.setBearerAuth(accessB);
+
+    ResponseEntity<Map<String, Object>> groupResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "Delete Invite Group"), headersA),
+      MAP_TYPE
+    );
+    assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId = (String) groupResp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> inviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB), headersA),
+      MAP_TYPE
+    );
+    assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<Void> deleteGroupResp = rest.exchange(
+      "/api/v1/groups/" + groupId,
+      HttpMethod.DELETE,
+      new HttpEntity<>(headersA),
+      Void.class
+    );
+    assertThat(deleteGroupResp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+    ResponseEntity<List<Map<String, Object>>> listResp = rest.exchange(
+      "/api/v1/invites?email=" + emailB.toLowerCase(),
+      HttpMethod.GET,
+      new HttpEntity<>(headersB),
+      LIST_OF_MAP_TYPE
+    );
+    assertThat(listResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(listResp.getBody()).isEmpty();
+  }
+
+  @Test
+  void cannotCreateDuplicatePendingInviteForSameGroupAndEmail() {
+    String ownerEmail = "owner_" + UUID.randomUUID() + "@example.com";
+    String inviteeEmail = "invitee_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupOwnerResp = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", ownerEmail, "password", password, "displayName", "Owner")),
+      MAP_TYPE
+    );
+    assertThat(signupOwnerResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String ownerAccess = (String) signupOwnerResp.getBody().get("accessToken");
+
+    HttpHeaders ownerHeaders = new HttpHeaders();
+    ownerHeaders.setBearerAuth(ownerAccess);
+    ownerHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+    ResponseEntity<Map<String, Object>> groupResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "No Duplicates"), ownerHeaders),
+      MAP_TYPE
+    );
+    assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId = (String) groupResp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> firstInviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", inviteeEmail), ownerHeaders),
+      MAP_TYPE
+    );
+    assertThat(firstInviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<Map<String, Object>> duplicateInviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", inviteeEmail.toUpperCase()), ownerHeaders),
+      MAP_TYPE
+    );
+    assertThat(duplicateInviteResp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void cannotInviteUserAlreadyInGroup() {
+    String ownerEmail = "owner_" + UUID.randomUUID() + "@example.com";
+    String memberEmail = "member_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupOwnerResp = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", ownerEmail, "password", password, "displayName", "Owner")),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupMemberResp = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", memberEmail, "password", password, "displayName", "Member")),
+      MAP_TYPE
+    );
+    assertThat(signupOwnerResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupMemberResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String ownerAccess = (String) signupOwnerResp.getBody().get("accessToken");
+    String memberAccess = (String) signupMemberResp.getBody().get("accessToken");
+
+    HttpHeaders ownerHeaders = new HttpHeaders();
+    ownerHeaders.setBearerAuth(ownerAccess);
+    ownerHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders memberHeaders = new HttpHeaders();
+    memberHeaders.setBearerAuth(memberAccess);
+    memberHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+    ResponseEntity<Map<String, Object>> groupResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "No Member Reinvite"), ownerHeaders),
+      MAP_TYPE
+    );
+    assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId = (String) groupResp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> inviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", memberEmail), ownerHeaders),
+      MAP_TYPE
+    );
+    assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String token = (String) inviteResp.getBody().get("token");
+
+    ResponseEntity<Void> acceptResp = rest.exchange(
+      "/api/v1/invites/accept",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("token", token), memberHeaders),
+      Void.class
+    );
+    assertThat(acceptResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<Map<String, Object>> reinviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", memberEmail), ownerHeaders),
+      MAP_TYPE
+    );
+    assertThat(reinviteResp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+
+    ResponseEntity<Map<String, Object>> selfInviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", ownerEmail), ownerHeaders),
+      MAP_TYPE
+    );
+    assertThat(selfInviteResp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+  }
+
+  @Test
+  void inviteeCanAcceptPendingInviteById() {
+    String emailA = "owner_" + UUID.randomUUID() + "@example.com";
+    String emailB = "invitee_" + UUID.randomUUID() + "@example.com";
+    String password = "password123";
+
+    ResponseEntity<Map<String, Object>> signupRespA = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailA, "password", password, "displayName", "Owner")),
+      MAP_TYPE
+    );
+    ResponseEntity<Map<String, Object>> signupRespB = rest.exchange(
+      "/api/v1/auth/signup",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB, "password", password, "displayName", "Invitee")),
+      MAP_TYPE
+    );
+    assertThat(signupRespA.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(signupRespB.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    String accessA = (String) signupRespA.getBody().get("accessToken");
+    String accessB = (String) signupRespB.getBody().get("accessToken");
+
+    HttpHeaders headersA = new HttpHeaders();
+    headersA.setBearerAuth(accessA);
+    headersA.setContentType(MediaType.APPLICATION_JSON);
+
+    HttpHeaders headersB = new HttpHeaders();
+    headersB.setBearerAuth(accessB);
+    headersB.setContentType(MediaType.APPLICATION_JSON);
+
+    ResponseEntity<Map<String, Object>> groupResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("name", "Accept By Id"), headersA),
+      MAP_TYPE
+    );
+    assertThat(groupResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String groupId = (String) groupResp.getBody().get("id");
+
+    ResponseEntity<Map<String, Object>> inviteResp = rest.exchange(
+      "/api/v1/groups/" + groupId + "/invites",
+      HttpMethod.POST,
+      new HttpEntity<>(Map.of("email", emailB), headersA),
+      MAP_TYPE
+    );
+    assertThat(inviteResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<List<Map<String, Object>>> listPendingResp = rest.exchange(
+      "/api/v1/invites?email=" + emailB.toLowerCase(),
+      HttpMethod.GET,
+      new HttpEntity<>(headersB),
+      LIST_OF_MAP_TYPE
+    );
+    assertThat(listPendingResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(listPendingResp.getBody()).hasSize(1);
+    String inviteId = (String) listPendingResp.getBody().get(0).get("id");
+
+    ResponseEntity<Void> acceptResp = rest.exchange(
+      "/api/v1/invites/" + inviteId + "/accept",
+      HttpMethod.POST,
+      new HttpEntity<>(headersB),
+      Void.class
+    );
+    assertThat(acceptResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<List<Map<String, Object>>> listGroupsResp = rest.exchange(
+      "/api/v1/groups",
+      HttpMethod.GET,
+      new HttpEntity<>(headersB),
+      LIST_OF_MAP_TYPE
+    );
+    assertThat(listGroupsResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(listGroupsResp.getBody()).extracting(g -> g.get("id")).contains(groupId);
+
+    ResponseEntity<List<Map<String, Object>>> listPendingAfterResp = rest.exchange(
+      "/api/v1/invites?email=" + emailB.toLowerCase(),
+      HttpMethod.GET,
+      new HttpEntity<>(headersB),
+      LIST_OF_MAP_TYPE
+    );
+    assertThat(listPendingAfterResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(listPendingAfterResp.getBody()).isEmpty();
   }
 
   @Test
