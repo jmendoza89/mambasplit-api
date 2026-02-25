@@ -6,16 +6,7 @@
 - Repo-specific instructions override broader/global instructions when they conflict.
 
 ## Workflow Keywords
-- `agent_commit_push_all`:
-  1. Show `git status --short`.
-  2. If there are no changes, stop and report "nothing to commit".
-  3. Run `git add .`.
-  4. Create a concise commit message based on the staged diff.
-  5. Commit with that generated message.
-  6. Detect current branch with `git branch --show-current`.
-  7. Run `git pull --rebase origin <current-branch>`.
-  8. Run `git push origin <current-branch>`.
-  9. Report commit hash and push result.
+- Inherit workflow commands from parent `C:\MambaSplit\AGENTS.md`.
 
 ## Useful Defaults To Reuse
 - `agent_start_local`:
