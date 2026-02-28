@@ -41,9 +41,6 @@ public class ExpenseController {
     groups.requireMember(gid, principal.userId());
     UUID payer = UUID.fromString(req.payerUserId());
     List<UUID> participants = req.participants().stream().map(UUID::fromString).toList();
-    var memberIds = new java.util.HashSet<UUID>(participants);
-    memberIds.add(payer);
-    groups.requireMembers(gid, memberIds);
     UUID id = expenseService.createEqualSplitExpense(gid, payer, req.description(), req.amountCents(), participants);
     return new CreateExpenseResponse(id.toString());
   }
@@ -55,12 +52,6 @@ public class ExpenseController {
     groups.requireMember(gid, principal.userId());
     UUID payer = UUID.fromString(req.payerUserId());
     var items = req.items().stream().map(i -> new ExpenseService.SplitExact.Item(UUID.fromString(i.userId()), i.amountCents())).toList();
-    var memberIds = new java.util.HashSet<UUID>();
-    memberIds.add(payer);
-    for (var item : items) {
-      memberIds.add(item.userId());
-    }
-    groups.requireMembers(gid, memberIds);
     UUID id = expenseService.createExactSplitExpense(gid, payer, req.description(), req.amountCents(), items);
     return new CreateExpenseResponse(id.toString());
   }

@@ -1,5 +1,6 @@
 package io.mambatech.mambasplit.web;
 
+import io.mambatech.mambasplit.exception.ResourceNotFoundException;
 import io.mambatech.mambasplit.repo.UserRepository;
 import io.mambatech.mambasplit.security.AuthPrincipal;
 import jakarta.validation.Valid;
@@ -22,13 +23,15 @@ public class MeController {
 
   @GetMapping
   public MeResponse me(@AuthenticationPrincipal AuthPrincipal principal) {
-    var u = users.findById(principal.userId()).orElseThrow();
+    var u = users.findById(principal.userId())
+      .orElseThrow(() -> new ResourceNotFoundException("User", principal.userId().toString()));
     return new MeResponse(u.getId().toString(), u.getEmail(), u.getDisplayName());
   }
 
   @PatchMapping
   public MeResponse update(@AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody UpdateMeRequest req) {
-    var u = users.findById(principal.userId()).orElseThrow();
+    var u = users.findById(principal.userId())
+      .orElseThrow(() -> new ResourceNotFoundException("User", principal.userId().toString()));
     u.setDisplayName(req.displayName());
     users.save(u);
     return new MeResponse(u.getId().toString(), u.getEmail(), u.getDisplayName());

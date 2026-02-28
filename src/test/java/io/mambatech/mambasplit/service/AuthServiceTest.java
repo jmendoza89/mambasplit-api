@@ -1,6 +1,8 @@
 package io.mambatech.mambasplit.service;
 
 import io.mambatech.mambasplit.domain.user.User;
+import io.mambatech.mambasplit.exception.AuthenticationException;
+import io.mambatech.mambasplit.exception.ConflictException;
 import io.mambatech.mambasplit.repo.RefreshTokenRepository;
 import io.mambatech.mambasplit.repo.UserRepository;
 import io.mambatech.mambasplit.security.AppSecurityProperties;
@@ -110,7 +112,7 @@ class AuthServiceTest {
     when(users.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(existing));
 
     assertThatThrownBy(() -> authService.authenticateGoogle("id-token"))
-      .isInstanceOf(IllegalArgumentException.class)
+      .isInstanceOf(ConflictException.class)
       .hasMessage("Email already linked to a different Google account");
   }
 
@@ -121,7 +123,7 @@ class AuthServiceTest {
     when(googleTokenVerifier.verify("id-token")).thenReturn(googleUser);
 
     assertThatThrownBy(() -> authService.authenticateGoogle("id-token"))
-      .isInstanceOf(IllegalArgumentException.class)
+      .isInstanceOf(AuthenticationException.class)
       .hasMessage("Google email is not verified");
   }
 }

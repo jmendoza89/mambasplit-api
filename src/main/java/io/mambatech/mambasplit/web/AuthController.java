@@ -1,6 +1,7 @@
 package io.mambatech.mambasplit.web;
 
 import io.mambatech.mambasplit.domain.user.User;
+import io.mambatech.mambasplit.exception.AuthenticationException;
 import io.mambatech.mambasplit.service.AuthService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -39,7 +40,8 @@ public class AuthController {
 
   @PostMapping("/login")
   public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest req) {
-    User u = auth.authenticate(req.email(), req.password()).orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
+    User u = auth.authenticate(req.email(), req.password())
+      .orElseThrow(() -> new AuthenticationException("Invalid email or password"));
     var tokens = auth.issueTokens(u);
     return ResponseEntity.ok(new AuthResponse(tokens.accessToken(), tokens.refreshToken(), UserDto.from(u)));
   }

@@ -130,7 +130,7 @@ class GroupFlowIT extends ITBase {
       new HttpEntity<>(Map.of("token", token), headersB),
       MAP_TYPE
     );
-    assertThat(reuseInviteResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(reuseInviteResp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
 
     Map<String, Object> inviteBodyForC = Map.of("email", emailC);
     ResponseEntity<Map<String, Object>> inviteByMemberResp = rest.exchange(
@@ -275,7 +275,7 @@ class GroupFlowIT extends ITBase {
       new HttpEntity<>(headersB),
       MAP_TYPE
     );
-    assertThat(memberDeleteResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(memberDeleteResp.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 
     ResponseEntity<Void> ownerDeleteResp = rest.exchange(
       "/api/v1/groups/" + groupId,
@@ -383,7 +383,7 @@ class GroupFlowIT extends ITBase {
       new HttpEntity<>(headersB),
       MAP_TYPE
     );
-    assertThat(memberDeleteResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(memberDeleteResp.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 
     ResponseEntity<Void> ownerDeleteResp = rest.exchange(
       "/api/v1/groups/" + groupId + "/expenses/" + expenseId,
@@ -492,7 +492,7 @@ class GroupFlowIT extends ITBase {
       new HttpEntity<>(Map.of("token", token), headersB),
       MAP_TYPE
     );
-    assertThat(acceptAfterCancelResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(acceptAfterCancelResp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
 
     ResponseEntity<Map<String, Object>> secondCancelResp = rest.exchange(
       "/api/v1/groups/" + groupId + "/invites/" + token,
@@ -500,7 +500,7 @@ class GroupFlowIT extends ITBase {
       new HttpEntity<>(headersA),
       MAP_TYPE
     );
-    assertThat(secondCancelResp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    assertThat(secondCancelResp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
   }
 
   @Test
