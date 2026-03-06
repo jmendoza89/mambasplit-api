@@ -64,7 +64,7 @@ public class GroupController {
 
   public record MeInfoDto(String userId, String role, long netBalanceCents) {
     static MeInfoDto from(GroupService.MeInfo m) {
-      return new MeInfoDto(m.userId().toString(), m.role(), m.netBalanceCents());
+      return new MeInfoDto(m.userId().toString(), m.role().name(), m.netBalanceCents());
     }
   }
 
@@ -81,7 +81,7 @@ public class GroupController {
         m.userId().toString(),
         m.displayName(),
         m.email(),
-        m.role(),
+        m.role().name(),
         m.joinedAt().toString(),
         m.netBalanceCents()
       );

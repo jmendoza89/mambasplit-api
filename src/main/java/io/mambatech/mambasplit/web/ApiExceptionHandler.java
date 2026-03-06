@@ -1,5 +1,6 @@
 package io.mambatech.mambasplit.web;
 
+import io.mambatech.mambasplit.exception.BusinessException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -15,6 +16,15 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class ApiExceptionHandler {
   public record ErrorResponse(String code, String message, String timestamp) {}
+
+  @ExceptionHandler(BusinessException.class)
+  public ResponseEntity<ErrorResponse> businessException(BusinessException ex) {
+    HttpStatus status = ex.getClass().isAnnotationPresent(ResponseStatus.class)
+      ? ex.getClass().getAnnotation(ResponseStatus.class).value()
+      : HttpStatus.BAD_REQUEST;
+    return ResponseEntity.status(status)
+      .body(new ErrorResponse(ex.getErrorCode(), ex.getMessage(), Instant.now().toString()));
+  }
 
   @ExceptionHandler(ResponseStatusException.class)
   public ResponseEntity<ErrorResponse> responseStatusException(ResponseStatusException ex) {

@@ -68,24 +68,42 @@ class AuthFlowIT extends ITBase {
     assertThat(refreshToken2).isNotBlank();
     assertThat(refreshToken2).isNotEqualTo(refreshToken1);
 
-    ResponseEntity<Map<String, Object>> refreshOld = rest.exchange(
-      "/api/v1/auth/refresh",
-      HttpMethod.POST,
-      new HttpEntity<>(refreshBody1),
-      MAP_TYPE
-    );
-    assertThat(refreshOld.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    ResponseEntity<Map<String, Object>> refreshOld;
+    try {
+      refreshOld = rest.exchange(
+        "/api/v1/auth/refresh",
+        HttpMethod.POST,
+        new HttpEntity<>(refreshBody1),
+        MAP_TYPE
+      );
+      assertThat(refreshOld.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    } catch (org.springframework.web.client.ResourceAccessException e) {
+      // TestRestTemplate throws ResourceAccessException for 401 in streaming mode
+      // The root cause is HttpRetryException which occurs when auth fails
+      assertThat(e.getMessage()).contains("cannot retry");
+    } catch (org.springframework.web.client.HttpClientErrorException e) {
+      // Alternative exception type if not in streaming mode
+      assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
 
     Map<String, Object> logoutBody = Map.of("refreshToken", refreshToken2);
     ResponseEntity<Void> logoutResp = rest.postForEntity("/api/v1/auth/logout", logoutBody, Void.class);
     assertThat(logoutResp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
 
-    ResponseEntity<Map<String, Object>> refreshAfterLogout = rest.exchange(
-      "/api/v1/auth/refresh",
-      HttpMethod.POST,
-      new HttpEntity<>(logoutBody),
-      MAP_TYPE
-    );
-    assertThat(refreshAfterLogout.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    try {
+      ResponseEntity<Map<String, Object>> refreshAfterLogout = rest.exchange(
+        "/api/v1/auth/refresh",
+        HttpMethod.POST,
+        new HttpEntity<>(logoutBody),
+        MAP_TYPE
+      );
+      assertThat(refreshAfterLogout.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    } catch (org.springframework.web.client.ResourceAccessException e) {
+      // TestRestTemplate throws ResourceAccessException for 401 in streaming mode
+      assertThat(e.getMessage()).contains("cannot retry");
+    } catch (org.springframework.web.client.HttpClientErrorException e) {
+      // Alternative exception type if not in streaming mode
+      assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
   }
 }

@@ -2,7 +2,12 @@ package io.mambatech.mambasplit.service;
 
 import io.mambatech.mambasplit.domain.group.Group;
 import io.mambatech.mambasplit.domain.group.GroupMember;
+import io.mambatech.mambasplit.domain.group.Role;
 import io.mambatech.mambasplit.domain.invite.Invite;
+import io.mambatech.mambasplit.exception.AuthorizationException;
+import io.mambatech.mambasplit.exception.ConflictException;
+import io.mambatech.mambasplit.exception.ResourceNotFoundException;
+import io.mambatech.mambasplit.exception.ValidationException;
 import io.mambatech.mambasplit.repo.ExpenseRepository;
 import io.mambatech.mambasplit.repo.ExpenseSplitRepository;
 import io.mambatech.mambasplit.repo.GroupMemberRepository;
@@ -10,6 +15,8 @@ import io.mambatech.mambasplit.repo.GroupRepository;
 import io.mambatech.mambasplit.repo.InviteRepository;
 import io.mambatech.mambasplit.repo.UserRepository;
 import io.mambatech.mambasplit.security.TokenCodec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +32,7 @@ import java.util.UUID;
 
 @Service
 public class GroupService {
+  private static final Logger log = LoggerFactory.getLogger(GroupService.class);
   private final GroupRepository groups;
   private final GroupMemberRepository members;
   private final InviteRepository invites;
@@ -52,10 +60,11 @@ public class GroupService {
   public Group createGroup(UUID creatorUserId, String name) {
     Group g = new Group(UUID.randomUUID(), name, creatorUserId, Instant.now());
     groups.save(g);
-    members.save(new GroupMember(UUID.randomUUID(), g.getId(), creatorUserId, "OWNER", Instant.now()));
+    members.save(new GroupMember(UUID.randomUUID(), g.getId(), creatorUserId, Role.OWNER, Instant.now()));
     return g;
   }
 
+  @Transactional(readOnly = true)
   public List<Group> listGroupsForUser(UUID userId) {
     var memberships = members.findByUserId(userId);
     var ids = memberships.stream().map(GroupMember::getGroupId).toList();
@@ -71,24 +80,32 @@ public class GroupService {
   ) {}
 
   public record GroupInfo(UUID id, String name, UUID createdBy, Instant createdAt) {}
-  public record MeInfo(UUID userId, String role, long netBalanceCents) {}
-  public record MemberInfo(UUID userId, String displayName, String email, String role, Instant joinedAt, long netBalanceCents) {}
+  public record MeInfo(UUID userId, Role role, long netBalanceCents) {}
+  public record MemberInfo(UUID userId, String displayName, String email, Role role, Instant joinedAt, long netBalanceCents) {}
   public record ExpenseInfo(UUID id, String description, long amountCents, UUID payerUserId, Instant createdAt, List<ExpenseSplitInfo> splits) {}
   public record ExpenseSplitInfo(UUID userId, long amountOwedCents) {}
   public record Summary(int expenseCount, long totalExpenseAmountCents) {}
 
+  @Transactional(readOnly = true)
   public GroupDetails getGroupDetails(UUID groupId, UUID userId) {
     GroupMember requesterMembership = members.findByGroupIdAndUserId(groupId, userId)
-      .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this group"));
+      .orElseThrow(() -> new AuthorizationException("access", "group " + groupId));
     Group group = groups.findById(groupId)
-      .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+      .orElseThrow(() -> new ResourceNotFoundException("Group", groupId.toString()));
 
+    // Data fetching optimized to minimize queries:
+    // 1. Fetch all group members in one query
     List<GroupMember> groupMembers = members.findByGroupId(groupId);
     Set<UUID> memberUserIds = groupMembers.stream().map(GroupMember::getUserId).collect(java.util.stream.Collectors.toSet());
+    
+    // 2. Batch fetch all user details in one query (using IN clause)
     var usersById = users.findAllById(memberUserIds).stream().collect(java.util.stream.Collectors.toMap(u -> u.getId(), u -> u));
 
+    // 3. Fetch expenses for the group
     List<io.mambatech.mambasplit.domain.expense.Expense> groupExpenses = expenses.findTop50ByGroupIdOrderByCreatedAtDesc(groupId);
     List<UUID> expenseIds = groupExpenses.stream().map(io.mambatech.mambasplit.domain.expense.Expense::getId).toList();
+    
+    // 4. Batch fetch all splits for these expenses in one query (using IN clause)
     var splitsByExpenseId = expenseIds.isEmpty()
       ? java.util.Map.<UUID, List<io.mambatech.mambasplit.domain.expense.ExpenseSplit>>of()
       : splits.findByExpenseIdIn(expenseIds).stream()
@@ -109,7 +126,9 @@ public class GroupService {
       .sorted(java.util.Comparator.comparing(GroupMember::getJoinedAt))
       .map(m -> {
         var user = usersById.get(m.getUserId());
-        if (user == null) throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User not found");
+        if (user == null) {
+          throw new ResourceNotFoundException("User", m.getUserId().toString());
+        }
         return new MemberInfo(
           m.getUserId(),
           user.getDisplayName(),
@@ -137,16 +156,23 @@ public class GroupService {
 
   @Transactional
   public void deleteGroup(UUID groupId, UUID actorUserId) {
-    Group group = groups.findById(groupId).orElseThrow(() -> new IllegalArgumentException("Group not found"));
+    Group group = groups.findById(groupId)
+      .orElseThrow(() -> new ResourceNotFoundException("Group", groupId.toString()));
     if (!group.getCreatedBy().equals(actorUserId)) {
-      throw new IllegalArgumentException("Only the group owner can delete this group");
+      log.warn("Authorization denied: User {} attempted to delete group {} owned by {}", 
+               actorUserId, groupId, group.getCreatedBy());
+      throw new AuthorizationException("delete", "group " + groupId);
     }
     groups.delete(group);
+    log.info("Group deleted: groupId={}, deletedBy={}", groupId, actorUserId);
   }
 
   public void requireMember(UUID groupId, UUID userId) {
     members.findByGroupIdAndUserId(groupId, userId)
-      .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this group"));
+      .orElseThrow(() -> {
+        log.warn("Authorization denied: User {} attempted to access group {} without membership", userId, groupId);
+        return new AuthorizationException("access", "group " + groupId);
+      });
   }
 
   public void requireMembers(UUID groupId, Iterable<UUID> userIds) {
@@ -159,7 +185,7 @@ public class GroupService {
     }
     long present = members.countByGroupIdAndUserIds(groupId, distinctUserIds);
     if (present != distinctUserIds.size()) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "One or more users are not members of this group");
+      throw new ValidationException("One or more users are not members of group " + groupId);
     }
   }
 
@@ -170,11 +196,11 @@ public class GroupService {
   public List<PendingInvite> listPendingInvitesForEmail(String email, UUID requesterUserId) {
     String normalizedQueryEmail = normalizeInviteEmail(email);
     String requesterEmail = users.findById(requesterUserId)
-      .orElseThrow(() -> new IllegalArgumentException("User not found"))
+      .orElseThrow(() -> new ResourceNotFoundException("User", requesterUserId.toString()))
       .getEmail();
     String normalizedRequesterEmail = normalizeInviteEmail(requesterEmail);
     if (!normalizedQueryEmail.equals(normalizedRequesterEmail)) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot list invites for another user");
+      throw new AuthorizationException("list invites for another user");
     }
 
     return invites.findPendingByEmail(normalizedQueryEmail, Instant.now()).stream()
@@ -194,14 +220,14 @@ public class GroupService {
     String normalizedEmail = normalizeInviteEmail(email);
     users.findByEmailIgnoreCase(normalizedEmail).ifPresent(user -> {
       if (members.findByGroupIdAndUserId(groupId, user.getId()).isPresent()) {
-        throw new ResponseStatusException(HttpStatus.CONFLICT, "User is already a member of this group");
+        throw new ConflictException("User is already a member of this group");
       }
     });
 
     Instant now = Instant.now();
     invites.findByGroupIdAndEmailIgnoreCase(groupId, normalizedEmail).ifPresent(existingInvite -> {
       if (existingInvite.getExpiresAt().isAfter(now)) {
-        throw new ResponseStatusException(HttpStatus.CONFLICT, "Invite already pending for this email in this group");
+        throw new ConflictException("Invite already pending for this email in this group");
       }
       invites.delete(existingInvite);
     });
@@ -217,54 +243,71 @@ public class GroupService {
   public void cancelInvite(UUID groupId, String rawToken, UUID actorUserId) {
     requireMember(groupId, actorUserId);
     if (rawToken == null || rawToken.isBlank()) {
-      throw new IllegalArgumentException("Invite token is required");
+      throw new ValidationException("Invite token is required");
     }
     String tokenHash = TokenCodec.sha256Base64Url(rawToken);
     long deleted = invites.deleteByGroupIdAndTokenHash(groupId, tokenHash);
     if (deleted == 0) {
-      throw new IllegalArgumentException("Invite not found");
+      throw new ResourceNotFoundException("Invite", "token hash");
     }
   }
 
   @Transactional
   public void acceptInvite(String rawToken, UUID userId) {
     String tokenHash = TokenCodec.sha256Base64Url(rawToken);
-    Invite invite = invites.findByTokenHash(tokenHash).orElseThrow(() -> new IllegalArgumentException("Invalid invite"));
-    if (invite.getExpiresAt().isBefore(Instant.now())) throw new IllegalArgumentException("Invite expired");
+    Invite invite = invites.findByTokenHash(tokenHash)
+      .orElseThrow(() -> new ResourceNotFoundException("Invite", "token"));
+    
+    // Check expiry - the window between this check and deletion is minimized by transaction
+    if (invite.getExpiresAt().isBefore(Instant.now())) {
+      throw new ValidationException("Invite has expired");
+    }
+    
     String userEmail = users.findById(userId)
-      .orElseThrow(() -> new IllegalArgumentException("User not found"))
+      .orElseThrow(() -> new ResourceNotFoundException("User", userId.toString()))
       .getEmail();
     if (!invite.getEmail().equalsIgnoreCase(userEmail)) {
-      throw new IllegalArgumentException("Invite email does not match authenticated user");
+      throw new ValidationException("Invite email does not match authenticated user");
     }
+    
+    // Atomic deletion - if another thread deletes first, this returns 0
     long deleted = invites.deleteByTokenHash(tokenHash);
-    if (deleted == 0) throw new IllegalArgumentException("Invite already used");
+    if (deleted == 0) {
+      throw new ConflictException("Invite already used");
+    }
+    
+    // Add user as member (idempotent with orElseGet)
     members.findByGroupIdAndUserId(invite.getGroupId(), userId).orElseGet(() ->
-      members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, "MEMBER", Instant.now()))
+      members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, Role.MEMBER, Instant.now()))
     );
   }
 
   @Transactional
   public void acceptInviteById(UUID inviteId, UUID userId) {
-    Invite invite = invites.findById(inviteId).orElseThrow(() -> new IllegalArgumentException("Invalid invite"));
-    if (invite.getExpiresAt().isBefore(Instant.now())) throw new IllegalArgumentException("Invite expired");
+    Invite invite = invites.findById(inviteId)
+      .orElseThrow(() -> new ResourceNotFoundException("Invite", inviteId.toString()));
+    if (invite.getExpiresAt().isBefore(Instant.now())) {
+      throw new ValidationException("Invite has expired");
+    }
     String userEmail = users.findById(userId)
-      .orElseThrow(() -> new IllegalArgumentException("User not found"))
+      .orElseThrow(() -> new ResourceNotFoundException("User", userId.toString()))
       .getEmail();
     if (!invite.getEmail().equalsIgnoreCase(userEmail)) {
-      throw new IllegalArgumentException("Invite email does not match authenticated user");
+      throw new ValidationException("Invite email does not match authenticated user");
     }
     long deleted = invites.deleteByIdAndTokenHash(invite.getId(), invite.getTokenHash());
-    if (deleted == 0) throw new IllegalArgumentException("Invite already used");
+    if (deleted == 0) {
+      throw new ConflictException("Invite already used");
+    }
     members.findByGroupIdAndUserId(invite.getGroupId(), userId).orElseGet(() ->
-      members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, "MEMBER", Instant.now()))
+      members.save(new GroupMember(UUID.randomUUID(), invite.getGroupId(), userId, Role.MEMBER, Instant.now()))
     );
   }
 
   private String normalizeInviteEmail(String email) {
     String normalized = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     if (normalized.isBlank()) {
-      throw new IllegalArgumentException("Email is required");
+      throw new ValidationException("Email is required");
     }
     return normalized;
   }
